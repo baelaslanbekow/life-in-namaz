@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Namaz Pro | Trillionaire Edition</title>
+    <!-- Premium Fonts -->
+    <link rel="stylesheet" href="css/style.css">
+    <!-- Dependencies -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.6.2/sql-wasm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div class="glass-bg"></div>
+
+    <!-- Auth Overlay -->
+    <div id="auth-overlay" class="auth-overlay glass">
+        <div class="auth-card">
+            <h2>Namaz Pro</h2>
+            <p>введите пароль для входа</p>
+            <div class="input-group">
+                <input type="password" id="auth-pass" placeholder="Password" autocomplete="off">
+            </div>
+            <div class="trust-device">
+                <input type="checkbox" id="trust-check">
+                <label for="trust-check">Доверять этому устройству</label>
+            </div>
+            <button class="unlock-btn" onclick="handleUnlock()">Разблокировать</button>
+        </div>
+    </div>
+
+    <div class="app-container" style="display: none;">
+        <header class="tracker-header">
+            <button class="icon-btn glass-btn" onclick="prevMonth()"><i data-lucide="chevron-left"></i></button>
+            <h1 id="month-display" class="month-title" onclick="toggleCalendar()">март, 2026</h1>
+            <div class="header-actions">
+                <div id="sync-status" class="sync-icon"><i data-lucide="cloud"></i></div>
+                <button class="icon-btn glass-btn" onclick="downloadBackup()" title="Download Backup"><i data-lucide="download"></i></button>
+                <button class="icon-btn glass-btn" onclick="toggleCalendar()"><i data-lucide="calendar-days"></i></button>
+            </div>
+        </header>
+
+        <div id="save-indicator" class="save-indicator">
+            <i data-lucide="check-circle" style="width: 16px;"></i>
+            <span>Information Saved</span>
+        </div>
+
+        <div id="calendar-modal" class="glass-modal">
+            <div class="modal-content glass">
+                <div class="modal-header">
+                    <h3>Выберите месяц и год</h3>
+                    <button class="icon-btn" onclick="toggleCalendar()"><i data-lucide="x"></i></button>
+                </div>
+                <div class="year-selector-wrap">
+                    <div id="year-list" class="selector-list"></div>
+                </div>
+                <div class="month-selector-wrap">
+                    <div id="month-list" class="selector-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <main id="main-content">
+            <div id="stats-container" class="stats-card glass"></div>
+            <div id="grid-container" class="grid-section">
+                <div id="grid-header" class="grid-header"></div>
+                <div id="grid-body" class="grid-body"></div>
+            </div>
+            <div id="trends-container"></div>
+        </main>
+    </div>
+
+    <script src="js/db.js"></script>
+    <script src="js/sync.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
