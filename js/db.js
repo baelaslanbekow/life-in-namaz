@@ -19,8 +19,6 @@ async function initDB() {
         } else {
             db = new SQL.Database();
             createSchema();
-            // Initial seed for current month
-            ensureMonthExists(2026, 2); // March (0-indexed)
         }
     } catch (err) {
         console.error("SQLite Init Error", err);
@@ -37,11 +35,6 @@ function createSchema() {
             completed INTEGER DEFAULT 0,
             PRIMARY KEY (year, month, day, type_idx)
         );
-        CREATE TABLE IF NOT EXISTS trends (
-            year INTEGER,
-            week_num INTEGER,
-            percent REAL
-        );
     `);
 }
 
@@ -57,23 +50,33 @@ function ensureMonthExists(year, month) {
             }
         }
         db.run("COMMIT");
-        saveDB();
+        saveLocal();
     }
 }
 
-function saveDB() {
+// Save only to localStorage (no cloud push here)
+function saveLocal() {
     try {
         const data = db.export();
         localStorage.setItem('namaz_db_v2', JSON.stringify(Array.from(data)));
-        window.dispatchEvent(new CustomEvent('db-saved'));
-        
-        // Push to cloud if available
-        if (window.NamazSync) {
-            window.NamazSync.syncToCloud(data);
-        }
-    } catch (err) { console.error("Save Error", err); }
+    } catch (err) { console.error("Local Save Error", err); }
 }
 
+// Import cloud data into local SQLite
+function importCloudData(cloudPrayers) {
+    if (!cloudPrayers || cloudPrayers.length === 0) return;
+    
+    // Ensure schema exists
+    createSchema();
+    
+    db.run("BEGIN TRANSACTION");
+    cloudPrayers.forEach(p => {
+        db.run(`INSERT OR REPLACE INTO prayers (year, month, day, type_idx, completed) VALUES (?, ?, ?, ?, ?)`,
+            [p.year, p.month, p.day, p.type_idx, p.completed]);
+    });
+    db.run("COMMIT");
+    saveLocal();
+}
 
 const Database = {
     async getDays(year, month) {
@@ -87,22 +90,35 @@ const Database = {
             const name = dayNames[dateObj.getDay()];
             const history = [];
             const res = db.exec(`SELECT completed FROM prayers WHERE year = ${year} AND month = ${month} AND day = ${d} ORDER BY type_idx`);
-            res[0].values.forEach(v => history.push(v[0] === 1));
-            
+            if (res.length > 0) {
+                res[0].values.forEach(v => history.push(v[0] === 1));
+            }
             days.push({ name, date: d, history });
         }
         return days;
     },
 
     togglePrayer(year, month, day, pIdx) {
-        db.run(`UPDATE prayers SET completed = 1 - completed WHERE year = ? AND month = ? AND day = ? AND type_idx = ?`, 
-               [year, month, day, pIdx]);
-        saveDB();
+        // Get current state
+        const res = db.exec(`SELECT completed FROM prayers WHERE year=${year} AND month=${month} AND day=${day} AND type_idx=${pIdx}`);
+        const current = res.length > 0 ? res[0].values[0][0] : 0;
+        const newVal = current === 1 ? 0 : 1;
+        
+        db.run(`UPDATE prayers SET completed = ? WHERE year = ? AND month = ? AND day = ? AND type_idx = ?`, 
+               [newVal, year, month, day, pIdx]);
+        saveLocal();
+        window.dispatchEvent(new CustomEvent('db-saved'));
+        
+        // Push THIS specific prayer to cloud
+        if (window.NamazSync) {
+            window.NamazSync.pushPrayer(year, month, day, pIdx, newVal);
+        }
     },
 
     getStats(year, month) {
+        ensureMonthExists(year, month);
         const res = db.exec(`SELECT COUNT(*) FROM prayers WHERE year = ${year} AND month = ${month} AND completed = 1`);
-        const completed = res[0].values[0][0];
+        const completed = res.length > 0 ? res[0].values[0][0] : 0;
         const daysInMonth = new Date(year, month + 1, 0).getDate();
         const total = daysInMonth * 6;
         return {
@@ -114,7 +130,6 @@ const Database = {
     },
 
     getTrends(year) {
-        // Simple mock for trends tied to year
         return {
             direction: 'up',
             change: '+12%',
@@ -125,4 +140,4 @@ const Database = {
     exportDB() { return db.export(); }
 };
 
-window.NamazDB = { initDB, Database };
+window.NamazDB = { initDB, Database, importCloudData };

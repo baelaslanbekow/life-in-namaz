@@ -1,22 +1,8 @@
 document.addEventListener('DOMContentLoaded', async () => {
-    // 1. Initialize Sync & DB
-    const { isTrusted, verifyPassword, setTrusted, pullFromCloud } = window.NamazSync;
-    
-    // Attempt cloud pull (non-blocking, with timeout)
-    try {
-        const cloudData = await Promise.race([
-            pullFromCloud(),
-            new Promise(resolve => setTimeout(() => resolve(null), 3000)) // 3s timeout
-        ]);
-        if (cloudData) {
-            localStorage.setItem('namaz_db_v2', JSON.stringify(Array.from(cloudData)));
-        }
-    } catch (e) {
-        console.warn("Cloud pull skipped:", e);
-    }
-    
+    // 1. Initialize DB first (local)
     await window.NamazDB.initDB();
-    const { Database } = window.NamazDB;
+    const { Database, importCloudData } = window.NamazDB;
+    const { isTrusted, verifyPassword, setTrusted, pullAllPrayers } = window.NamazSync;
 
     // 2. DOM Elements
     const authOverlay = document.getElementById('auth-overlay');
@@ -33,15 +19,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const yearList = document.getElementById('year-list');
     const monthList = document.getElementById('month-list');
 
-    // 3. Lucide icons init
     lucide.createIcons();
 
-    // 4. Auth Management
+    // 3. Auth
     if (isTrusted()) {
         unlockApp();
     }
 
-    // Allow Enter key to submit password
     authPass.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') handleUnlock();
     });
@@ -49,7 +33,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.handleUnlock = async () => {
         const pass = authPass.value;
         const valid = await verifyPassword(pass);
-        
         if (valid) {
             if (trustCheck.checked) setTrusted(true);
             unlockApp();
@@ -60,12 +43,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    function unlockApp() {
+    async function unlockApp() {
+        // Pull cloud data AFTER auth (user is verified)
+        const syncIcon = document.getElementById('sync-status');
+        if (syncIcon) syncIcon.classList.add('syncing');
+        
+        try {
+            const cloudData = await Promise.race([
+                pullAllPrayers(),
+                new Promise(resolve => setTimeout(() => resolve(null), 5000))
+            ]);
+            if (cloudData && cloudData.length > 0) {
+                importCloudData(cloudData);
+                console.log(`Synced ${cloudData.length} prayers from cloud.`);
+            }
+        } catch (e) {
+            console.warn("Cloud sync on login skipped:", e);
+        } finally {
+            if (syncIcon) syncIcon.classList.remove('syncing');
+        }
+
         gsap.to(authOverlay, {
-            opacity: 0,
-            y: -50,
-            duration: 0.8,
-            ease: "power3.inOut",
+            opacity: 0, y: -50, duration: 0.8, ease: "power3.inOut",
             onComplete: () => {
                 authOverlay.style.display = 'none';
                 appContainer.style.display = 'block';
@@ -75,16 +74,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // 5. State
+    // 4. State
     let currentYear = 2026;
-    let currentMonth = 2; // March
+    let currentMonth = 2;
 
-    // 6. Render Functions
+    // 5. Render
     async function renderAll() {
         const stats = Database.getStats(currentYear, currentMonth);
         const days = await Database.getDays(currentYear, currentMonth);
         const trends = Database.getTrends(currentYear);
-
         updateHeader();
         renderStats(stats);
         renderGrid(days);
@@ -99,17 +97,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     function renderStats(stats) {
         const circleLen = 2 * Math.PI * 50;
         const offset = circleLen - (stats.percent / 100) * circleLen;
-
         statsContainer.innerHTML = `
             <div class="stat-group">
-                <div class="stat-item">
-                    <span class="stat-label">выполнено</span>
-                    <span class="stat-value">${stats.completed}</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">не отмечено</span>
-                    <span class="stat-value">${stats.notMarked}</span>
-                </div>
+                <div class="stat-item"><span class="stat-label">выполнено</span><span class="stat-value">${stats.completed}</span></div>
+                <div class="stat-item"><span class="stat-label">не отмечено</span><span class="stat-value">${stats.notMarked}</span></div>
             </div>
             <div class="progress-container">
                 <svg class="progress-circle-svg" width="140" height="140">
@@ -118,24 +109,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                             style="stroke-dasharray: ${circleLen}; stroke-dashoffset: ${circleLen};"></circle>
                 </svg>
                 <div class="progress-text">${stats.percent}%</div>
-            </div>
-        `;
+            </div>`;
         gsap.to('#progress-bar', { strokeDashoffset: offset, duration: 1.5, ease: "power2.out" });
     }
 
     function renderGrid(days) {
         const prayerLabels = ['Ф', 'З', 'А', 'М', 'И', 'В'];
         gridHeader.innerHTML = `<div class="sticky-corner"></div>` + days.map(d => `
-            <div class="day-col">
-                <span class="day-name">${d.name}</span>
-                <span class="day-date ${d.date === 13 ? 'today' : ''}">${d.date}</span>
-            </div>
+            <div class="day-col"><span class="day-name">${d.name}</span><span class="day-date">${d.date}</span></div>
         `).join('');
 
         gridBody.innerHTML = prayerLabels.map((label, pIdx) => `
             <div class="grid-row">
                 <div class="prayer-label"><span class="label-tab">${label}</span></div>
-                ${days.map((day) => `
+                ${days.map(day => `
                     <div class="grid-cell">
                         <div class="circle ${day.history[pIdx] ? 'completed' : 'not-marked'}" 
                              onclick="handleToggle(${day.date}, ${pIdx})">
@@ -155,22 +142,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="trend-icon-box ${trends.direction}"><i data-lucide="${isUp ? 'trending-up' : 'trending-down'}"></i></div>
                 <div class="trend-info">
                     <div class="trend-title">Тренд за год</div>
-                    <div class="trend-value" style="color: ${isUp ? 'var(--accent-primary)' : 'var(--accent-red)'}">
-                        ${trends.change} ${isUp ? 'вверх' : 'вниз'}
-                    </div>
+                    <div class="trend-value" style="color: ${isUp ? 'var(--accent-primary)' : 'var(--accent-red)'}">${trends.change} ${isUp ? 'вверх' : 'вниз'}</div>
                 </div>
                 <div class="sparkline">
-                    ${trends.history.map((h, i) => `
-                        <div class="spark-bar ${i === trends.history.length - 1 ? 'accent' : ''}" style="height: 0px;"></div>
-                    `).join('')}
+                    ${trends.history.map((h, i) => `<div class="spark-bar ${i === trends.history.length - 1 ? 'accent' : ''}" style="height: 0px;"></div>`).join('')}
                 </div>
-            </div>
-        `;
+            </div>`;
         lucide.createIcons();
         gsap.to('.spark-bar', { height: (i) => trends.history[i] * 1.5, stagger: 0.1, duration: 1, ease: "elastic.out(1, 0.3)" });
     }
 
-    // 7. Interaction
+    // 6. Interaction
     window.handleToggle = async (day, pIdx) => {
         Database.togglePrayer(currentYear, currentMonth, day, pIdx);
         renderAll();
@@ -189,31 +171,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function renderSelectors() {
         const months = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
-        yearList.innerHTML = Array.from({ length: 2026 - 1950 + 1 }, (_, i) => 1950 + i).map(y => `
-            <div class="selector-item ${y === currentYear ? 'active' : ''}" onclick="selectDate(${y}, ${currentMonth})">${y}</div>
-        `).join('');
-        monthList.innerHTML = months.map((m, i) => `
-            <div class="selector-item ${i === currentMonth ? 'active' : ''}" onclick="selectDate(${currentYear}, ${i})">${m}</div>
-        `).join('');
+        yearList.innerHTML = Array.from({ length: 2026 - 1950 + 1 }, (_, i) => 1950 + i).map(y =>
+            `<div class="selector-item ${y === currentYear ? 'active' : ''}" onclick="selectDate(${y}, ${currentMonth})">${y}</div>`
+        ).join('');
+        monthList.innerHTML = months.map((m, i) =>
+            `<div class="selector-item ${i === currentMonth ? 'active' : ''}" onclick="selectDate(${currentYear}, ${i})">${m}</div>`
+        ).join('');
         setTimeout(() => {
-            const activeYear = yearList.querySelector('.active');
-            const activeMonth = monthList.querySelector('.active');
-            activeYear?.scrollIntoView({ behavior: 'smooth', inline: 'center' });
-            activeMonth?.scrollIntoView({ behavior: 'smooth', inline: 'center' });
+            yearList.querySelector('.active')?.scrollIntoView({ behavior: 'smooth', inline: 'center' });
+            monthList.querySelector('.active')?.scrollIntoView({ behavior: 'smooth', inline: 'center' });
         }, 100);
     }
 
-    window.selectDate = async (year, month) => {
-        currentYear = year;
-        currentMonth = month;
-        renderSelectors();
-        await renderAll();
-    };
-
-    window.prevMonth = async () => {
-        if (currentMonth === 0) { currentMonth = 11; currentYear--; } else { currentMonth--; }
-        await renderAll();
-    };
+    window.selectDate = async (year, month) => { currentYear = year; currentMonth = month; renderSelectors(); await renderAll(); };
+    window.prevMonth = async () => { if (currentMonth === 0) { currentMonth = 11; currentYear--; } else { currentMonth--; } await renderAll(); };
 
     window.downloadBackup = () => {
         const u8array = Database.exportDB();

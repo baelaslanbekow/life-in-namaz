@@ -1,5 +1,5 @@
 const SUPABASE_URL = 'https://xjiqsgmgxepqzcxjzhwt.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_hlpmoqSi6OjOLzLZSeRm4Q_D2Y7ajpt';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhqaXFzZ21neGVwcXpjeGp6aHd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxNDMzNDIsImV4cCI6MjA4OTcxOTM0Mn0.cgzB829xyrZqTc8pUIWYoEcASr7zDr--aKB5g7dqcN8';
 
 let supabaseClient = null;
 try {
@@ -24,37 +24,51 @@ const Sync = {
         return input.toLowerCase() === 'lovebael';
     },
 
-    async syncToCloud(dbArray) {
-        if (!supabaseClient) return;
-        const icon = document.getElementById('sync-status');
-        if (icon) icon.classList.add('syncing');
-        
-        try {
-            const blob = new Blob([dbArray], { type: 'application/octet-stream' });
-            const { error } = await supabaseClient.storage
-                .from('namaz-backups')
-                .upload('latest-backup.sqlite', blob, { upsert: true });
-
-            if (error) throw error;
-            console.log("Cloud sync successful.");
-        } catch (err) {
-            console.warn("Cloud sync skipped:", err.message || err);
-        } finally {
-            if (icon) icon.classList.remove('syncing');
-        }
-    },
-
-    async pullFromCloud() {
+    // Pull ALL prayers from the cloud database
+    async pullAllPrayers() {
         if (!supabaseClient) return null;
         try {
-            const { data, error } = await supabaseClient.storage
-                .from('namaz-backups')
-                .download('latest-backup.sqlite');
+            const { data, error } = await supabaseClient
+                .from('prayers')
+                .select('year, month, day, type_idx, completed');
             if (error) throw error;
-            return new Uint8Array(await data.arrayBuffer());
+            return data; // Array of {year, month, day, type_idx, completed}
         } catch (err) {
             console.warn("Cloud pull skipped:", err.message || err);
             return null;
+        }
+    },
+
+    // Push a single prayer toggle to the cloud
+    async pushPrayer(year, month, day, type_idx, completed) {
+        if (!supabaseClient) return;
+        try {
+            const { error } = await supabaseClient
+                .from('prayers')
+                .upsert(
+                    { year, month, day, type_idx, completed },
+                    { onConflict: 'year,month,day,type_idx' }
+                );
+            if (error) throw error;
+        } catch (err) {
+            console.warn("Cloud push skipped:", err.message || err);
+        }
+    },
+
+    // Push all prayers for a given month to the cloud
+    async pushMonth(year, month, prayers) {
+        if (!supabaseClient) return;
+        const icon = document.getElementById('sync-status');
+        if (icon) icon.classList.add('syncing');
+        try {
+            const { error } = await supabaseClient
+                .from('prayers')
+                .upsert(prayers, { onConflict: 'year,month,day,type_idx' });
+            if (error) throw error;
+        } catch (err) {
+            console.warn("Bulk cloud push skipped:", err.message || err);
+        } finally {
+            if (icon) icon.classList.remove('syncing');
         }
     }
 };
