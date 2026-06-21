@@ -392,11 +392,12 @@ body {
 }
 
 .trend-icon-box.up { background: var(--accent-soft); color: var(--accent-primary); }
+.trend-icon-box.down { background: rgba(239, 68, 68, 0.1); color: var(--accent-red); }
 .trend-title { font-size: 14px; color: var(--text-secondary); font-weight: 500; }
 .trend-value { font-size: 22px; font-weight: 800; margin-top: 2px; }
 
-.sparkline { display: flex; align-items: flex-end; gap: 6px; height: 48px; }
-.spark-bar { width: 8px; background: #e2e8f0; border-radius: 4px; }
+.sparkline { display: flex; align-items: flex-end; gap: 2px; height: 48px; flex: 1; min-width: 0; overflow-x: auto; }
+.spark-bar { flex: 1; min-width: 3px; max-width: 10px; background: #e2e8f0; border-radius: 4px; }
 .spark-bar.accent { background: var(--accent-primary); box-shadow: 0 4px 10px -2px rgba(0, 137, 123, 0.3); }
 
 

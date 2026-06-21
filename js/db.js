@@ -129,12 +129,25 @@ const Database = {
         };
     },
 
-    getTrends(year) {
-        return {
-            direction: 'up',
-            change: '+12%',
-            history: [10, 15, 12, 18, 20, 25, 22]
-        };
+    getMonthTrends(year, month) {
+        ensureMonthExists(year, month);
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const history = [];
+        let totalCompleted = 0;
+
+        for (let d = 1; d <= daysInMonth; d++) {
+            const res = db.exec(`SELECT COUNT(*) FROM prayers WHERE year=${year} AND month=${month} AND day=${d} AND completed=1`);
+            const completed = res.length > 0 ? res[0].values[0][0] : 0;
+            history.push(Math.round((completed / 6) * 100));
+            totalCompleted += completed;
+        }
+
+        const percent = Math.round((totalCompleted / (daysInMonth * 6)) * 100);
+        const mid = Math.floor(daysInMonth / 2);
+        const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+        const direction = avg(history.slice(mid)) >= avg(history.slice(0, mid)) ? 'up' : 'down';
+
+        return { percent, history, direction };
     },
 
     exportDB() { return db.export(); }

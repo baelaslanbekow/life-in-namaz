@@ -74,15 +74,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // 4. State
-    let currentYear = 2026;
-    let currentMonth = 2;
+    // 4. State — always open on today's month/year
+    const today = new Date();
+    let currentYear = today.getFullYear();
+    let currentMonth = today.getMonth();
 
     // 5. Render
     async function renderAll() {
         const stats = Database.getStats(currentYear, currentMonth);
         const days = await Database.getDays(currentYear, currentMonth);
-        const trends = Database.getTrends(currentYear);
+        const trends = Database.getMonthTrends(currentYear, currentMonth);
         updateHeader();
         renderStats(stats);
         renderGrid(days);
@@ -137,19 +138,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function renderTrends(trends) {
         const isUp = trends.direction === 'up';
+        const now = new Date();
+        const accentIdx = (currentYear === now.getFullYear() && currentMonth === now.getMonth())
+            ? now.getDate() - 1
+            : trends.history.length - 1;
+
         trendsContainer.innerHTML = `
             <div class="trend-card glass">
                 <div class="trend-icon-box ${trends.direction}"><i data-lucide="${isUp ? 'trending-up' : 'trending-down'}"></i></div>
                 <div class="trend-info">
-                    <div class="trend-title">Тренд за год</div>
-                    <div class="trend-value" style="color: ${isUp ? 'var(--accent-primary)' : 'var(--accent-red)'}">${trends.change} ${isUp ? 'вверх' : 'вниз'}</div>
+                    <div class="trend-title">Тренд за месяц</div>
+                    <div class="trend-value" style="color: ${isUp ? 'var(--accent-primary)' : 'var(--accent-red)'}">${trends.percent}%</div>
                 </div>
                 <div class="sparkline">
-                    ${trends.history.map((h, i) => `<div class="spark-bar ${i === trends.history.length - 1 ? 'accent' : ''}" style="height: 0px;"></div>`).join('')}
+                    ${trends.history.map((h, i) => `<div class="spark-bar ${i === accentIdx ? 'accent' : ''}" style="height: 0px;" title="День ${i + 1}: ${h}%"></div>`).join('')}
                 </div>
             </div>`;
         lucide.createIcons();
-        gsap.to('.spark-bar', { height: (i) => trends.history[i] * 1.5, stagger: 0.1, duration: 1, ease: "elastic.out(1, 0.3)" });
+        gsap.to('.spark-bar', {
+            height: (i) => (trends.history[i] / 100) * 48,
+            stagger: 0.02,
+            duration: 0.8,
+            ease: 'power2.out'
+        });
     }
 
     // 6. Interaction
